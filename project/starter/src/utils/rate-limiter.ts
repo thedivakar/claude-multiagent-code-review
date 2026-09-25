@@ -226,6 +226,7 @@ export class RateLimiter {
    */
   private pruneOldRecords(): void {
     // Remove request records older than the tracking window
+    
     // Steps:
     // 1. Calculate the cutoff timestamp: Date.now() - 60000
     // 2. Filter requestHistory to keep only records where timestamp > cutoff
