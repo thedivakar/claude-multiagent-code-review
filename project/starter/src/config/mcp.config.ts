@@ -16,7 +16,7 @@ export const mcpServersConfig = {
    * GitHub MCP Server
    * Provides tools for GitHub API operations
    *
-   * TODO: Configure with:
+   // GitHub MCP configuration:
    * - type: 'stdio' as const
    * - command: 'npx'
    * - args: ['-y', '@modelcontextprotocol/server-github']
@@ -26,17 +26,29 @@ export const mcpServersConfig = {
    * The GitHub MCP server expects GITHUB_PERSONAL_ACCESS_TOKEN as the env var name.
    * We map our GITHUB_TOKEN from .env to this expected name.
    */
-  github: { },
+  github: {
+    type: 'stdio' as const,
+    command: 'nxp',
+    args: ['-y', '@modelcontextprotocol/server-github'],
+    env: {
+      GITHUB_PERSONAL_ACCESS_TOKEN: process.env.GITHUB_TOKEN || '',
+    },
+  },
 
   /**
    * ESLint MCP Server
    * Provides tools for linting and code quality analysis
    *
-   * TODO: Configure with:
+   // ESLint MCP configuration:
    * - type: 'stdio' as const
    * - command: 'npx'
    * - args: ['-y', '@eslint/mcp@latest']
    * - env: {}
    */
-  eslint: { }
+  eslint: {
+    type: 'stdio' as const,
+    command: 'nxp',
+    args: ['-y', '@eslint/mcp@latest'],
+    env: {},
+   },
 };

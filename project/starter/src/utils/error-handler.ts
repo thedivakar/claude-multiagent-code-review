@@ -67,16 +67,37 @@ export async function withRetry<T>(
   maxRetries: number = 3,
   delayMs: number = 1000
 ): Promise<T> {
-  // TODO: Implement retry logic with exponential backoff
-  // Hints:
-  // - Use a for loop from 1 to maxRetries
-  // - Use try/catch to catch errors
-  // - Calculate backoff: delayMs * Math.pow(2, attempt - 1)
-  // - Add jitter: Math.random() * 100
-  // - Use setTimeout wrapped in Promise for delay
-  // - Throw ReviewError with ErrorCodes.RETRY_EXHAUSTED if all retries fail
+  
+    let lastError: unknown;
 
-  throw new Error('Not implemented');
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+
+      if (attempt === maxRetries) {
+        break;
+      }
+
+      const backoff = delayMs * Math.pow(2, attempt - 1);
+      const jitter = Math.random() * 100;
+
+      await new Promise((resolve) =>
+        setTimeout(resolve, backoff + jitter)
+      );
+    }
+  }
+
+  throw new ReviewError(
+    `Operation failed after ${maxRetries} attempts: ${formatError(lastError)}`,
+    ErrorCodes.RETRY_EXHAUSTED,
+    {
+      attempts: maxRetries,
+      lastError: formatError(lastError),
+    }
+  );
+
 }
 
 /**
@@ -96,14 +117,20 @@ export async function withTimeout<T>(
   timeoutMs: number,
   errorMessage: string = 'Operation timed out'
 ): Promise<T> {
-  // TODO: Implement timeout wrapper using Promise.race
-  // Hints:
-  // - Use Promise.race to race fn() against a timeout promise
-  // - The timeout promise should reject after timeoutMs milliseconds
-  // - Throw ReviewError with ErrorCodes.AGENT_TIMEOUT on timeout
-  // - Include timeoutMs in metadata
-
-  throw new Error('Not implemented');
+    return Promise.race([
+    fn(),
+    new Promise<T>((_, reject) => {
+      setTimeout(() => {
+        reject(
+          new ReviewError(
+            errorMessage,
+            ErrorCodes.AGENT_TIMEOUT,
+            { timeoutMs }
+          )
+        );
+      }, timeoutMs);
+    }),
+  ]);
 }
 
 /**
