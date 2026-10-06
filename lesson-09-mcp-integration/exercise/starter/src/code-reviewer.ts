@@ -63,10 +63,10 @@ export type IssueSummary = z.infer<typeof IssueSummarySchema>;
 export type IssueCategories = z.infer<typeof IssueCategoriesSchema>;
 export type CodeQualityReport = z.infer<typeof CodeQualityReportSchema>;
 
-// Convert to JSON Schema for structured output
-export const CodeQualityReportJSONSchema = zodToJsonSchema(CodeQualityReportSchema, {
-  $refStrategy: "root",
-});
+// Convert to JSON Schema for structured output, strip extra keys
+// @ts-expect-error - Type instantiation depth limitation with complex Zod schemas
+const { $schema, additionalProperties, ...CodeQualityReportJSONSchema } = zodToJsonSchema(CodeQualityReportSchema) as Record<string, unknown>;
+export { CodeQualityReportJSONSchema };
 
 // -----------------------------------------------------------------------------
 // TODO: Step 1 - Implement async generator input mode
@@ -74,14 +74,19 @@ export const CodeQualityReportJSONSchema = zodToJsonSchema(CodeQualityReportSche
 // -----------------------------------------------------------------------------
 
 async function* generateMessages(userMessage: string) {
-  throw new Error("TODO: Implement generateMessages async generator");
+  yield {
+    type: "user" as const,
+    message: { role: "user" as const, content: userMessage },
+    parent_tool_use_id: null,
+    session_id: "code-review-session",
+  };
 }
 
 // -----------------------------------------------------------------------------
 // Main Function
 // -----------------------------------------------------------------------------
 
-export async function reviewCodeFile(filePath: string): Promise<any> {
+export async function reviewCodeFile(filePath: string): Promise<CodeQualityReport> {
   const userMessage = `You are a code quality reviewer with access to ESLint via MCP.
 
 Analyze the JavaScript file and provide a comprehensive quality report.
@@ -118,12 +123,47 @@ ANALYSIS REQUIREMENTS:
 
 Return the complete quality report in the structured JSON format.`;
 
-  // TODO: Step 2 - Call the query function
+  for await (const message of query({
+    prompt: generateMessages(userMessage),
+    options: {
+      mcpServers: mcpServersConfig,
+      model,
+      allowedTools: [...eslintTools, 'Read'],
+      outputFormat: {
+        type: "json_schema",
+        schema: CodeQualityReportJSONSchema,
+      },
+    },
+  })) {
+    // Check MCP server connection status on init
+    if ((message as any).type === "init") {
+      const initMessage = message as any as { mcpServers?: Record<string, { status: string; error?: string }> };
+      if (initMessage.mcpServers) {
+        for (const [name, server] of Object.entries(initMessage.mcpServers)) {
+          if (server.status === "failed") {
+            throw new Error(`MCP server '${name}' failed to connect: ${server.error || "Unknown error"}`);
+          }
+          console.log(`[MCP]: Server '${name}' status: ${server.status}`);
+        }
+      }
+    }
 
-  // TODO: Step 3 - Handle the message stream:
-  // - Check for "init" message to verify MCP server connection status
-  // - Log tool use events (when message.type === "assistant")
-  // - Return the result when message.type === "result" && message.subtype === "success"
+    if (message.type === "assistant") {
+      const content = message.message?.content;
+      if (Array.isArray(content)) {
+        for (const block of content) {
+          if (block.type === "tool_use") {
+            console.log(`[Tool]: ${block.name}`);
+          }
+        }
+      }
+    } else if (message.type === "result" && message.subtype === "success" && message.structured_output) {
+      return CodeQualityReportSchema.parse(message.structured_output);
+    } else if (message.type === "result" && message.subtype !== "success") {
+      console.error(`[Error]: ${message.subtype}`);
+      throw new Error(`Failed to generate code quality report: ${message.subtype}`);
+    }
+  }
 
-  throw new Error("TODO: Implement reviewCodeFile using query() with MCP servers");
+  throw new Error("Failed to get structured output from agent");
 }

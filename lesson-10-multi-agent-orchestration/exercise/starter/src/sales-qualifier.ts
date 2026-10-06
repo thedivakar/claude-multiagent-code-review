@@ -68,7 +68,12 @@ export const SalesBriefingJSONSchema = zodToJsonSchema(SalesBriefingSchema, {
 // -----------------------------------------------------------------------------
 
 async function* generateMessages(userMessage: string) {
-  throw new Error("TODO: Implement generateMessages async generator");
+  yield {
+    type: "user" as const,
+    message: { role: "user" as const, content: userMessage },
+    parent_tool_use_id: null,
+    session_id: "sales-qualifier-session",
+  };
 }
 
 // -----------------------------------------------------------------------------
@@ -78,37 +83,53 @@ async function* generateMessages(userMessage: string) {
 // -----------------------------------------------------------------------------
 
 const subagents: Record<string, AgentDefinition> = {
-  // TODO: Define "company-researcher" agent
-  // - description: "Research specialist that gathers company intelligence"
-  // - prompt: Instructions for gathering company size, industry, tech stack, news
-  // - tools: ["WebSearch"] (for web research)
   "company-researcher": {
-    description: "", // TODO: Add description
-    prompt: "", // TODO: Add prompt
-    tools: [], // TODO: What tools does this agent need?
-    model: "sonnet", // Use model string
-  },
+    description: "Research specialist that gathers company intelligence",
+    prompt: `You are a company research specialist.
 
-  // TODO: Define "competitive-analyzer" agent
-  // - description: "Analyst that compares prospect's solution to ours"
-  // - prompt: Instructions for analyzing competitive position
-  // - tools: [] (no tools needed, uses provided context)
-  // - model: "haiku" (simpler analysis, lower cost)
-  "competitive-analyzer": {
-    description: "", // TODO: Add description
-    prompt: "", // TODO: Add prompt
-    tools: [], // No tools needed
+When asked to research a company, gather:
+1. Company size (employees, revenue)
+2. Industry and market position
+3. Technology stack they use
+4. Recent news and developments
+
+IMPORTANT: Use no more than 5 web searches total. Be strategic with your queries.
+Focus on information relevant to B2B software sales.`,
+    tools: ["WebSearch"],
     model: "haiku",
   },
 
-  // TODO: Define "qualification-scorer" agent
-  // - description: "Scorer that assesses BANT criteria and deal probability"
-  // - prompt: Instructions for BANT assessment (Budget, Authority, Need, Timeline)
-  // - tools: [] (no tools needed)
-  // - model: "haiku"
+  "competitive-analyzer": {
+    description: "Analyst that compares prospect's solution to ours",
+    prompt: `You are a competitive analysis specialist.
+
+When given company information, analyze:
+1. What solutions they currently use
+2. Our advantages over competitors
+3. Potential concerns they might have
+4. Switching barriers and costs
+
+Focus on strategic positioning for sales conversations.`,
+    tools: [],
+    model: "haiku",
+  },
+
   "qualification-scorer": {
-    description: "", // TODO: Add description
-    prompt: "", // TODO: Add prompt
+    description: "Scorer that assesses BANT criteria and deal probability",
+    prompt: `You are a sales qualification specialist.
+
+Given research and competitive analysis, assess BANT:
+- Budget: Can they afford us? Estimated budget?
+- Authority: Is contact a decision maker?
+- Need: What pain points? How urgent?
+- Timeline: When might they decide?
+
+Calculate deal size and win probability (0-100%).
+
+RULES:
+- Company <10 employees = Disqualify
+- No clear pain points = Nurture
+- Using competitor = Highlight switching ROI`,
     tools: [],
     model: "haiku",
   },
@@ -153,18 +174,36 @@ After all agents complete, compile a comprehensive sales briefing with:
 
 Return the briefing as structured JSON.`;
 
-  // TODO 3: Call the query function with:
-  // - prompt: Use the async generator (generateMessages)
-  // - options:
-  //   - allowedTools: ["Task"]
-  //   - agents: subagents
-  //   - model: "sonnet" (use string, not env var)
-  //   - outputFormat: { type: "json_schema", schema: SalesBriefingJSONSchema }
-  //   - maxTurns: 15
-  //
-  // TODO 4: Handle the message stream:
-  // - Log Task tool invocations (when block.type === "tool_use" && block.name === "Task")
-  // - Return SalesBriefingSchema.parse(message.structured_output) when result is success
+  for await (const message of query({
+    prompt: generateMessages(orchestratorPrompt),
+    options: {
+      allowedTools: ["Task"],
+      agents: subagents,
+      model: "sonnet",
+      outputFormat: {
+        type: "json_schema",
+        schema: SalesBriefingJSONSchema,
+      },
+      maxTurns: 15,
+    },
+  })) {
+    if (message.type === "assistant") {
+      const content = message.message?.content;
+      if (Array.isArray(content)) {
+        for (const block of content) {
+          if (block.type === "tool_use" && block.name === "Task") {
+            const input = block.input as { description?: string };
+            console.log(`[Task] Invoking subagent: ${input.description || "task"}`);
+          }
+        }
+      }
+    } else if (message.type === "result" && message.subtype === "success" && message.structured_output) {
+      return SalesBriefingSchema.parse(message.structured_output);
+    } else if (message.type === "result" && message.subtype !== "success") {
+      console.error(`[Error]: ${message.subtype}`);
+      throw new Error(`Failed to generate sales briefing: ${message.subtype}`);
+    }
+  }
 
-  throw new Error("TODO: Implement qualifyOpportunity using query() with subagents");
+  throw new Error("Failed to generate sales briefing");
 }
