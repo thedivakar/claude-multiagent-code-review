@@ -9,6 +9,7 @@ export const codeQualityAnalyzer: AgentDefinition = {
     'Read',
     'Grep',
     'Glob',
+    'Skill',
     'mcp__github__get_file_contents',
     'mcp__eslint__lint-files',
   ],

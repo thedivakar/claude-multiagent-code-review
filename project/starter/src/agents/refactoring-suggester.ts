@@ -9,6 +9,7 @@ export const refactoringSuggester: AgentDefinition = {
     'Read',
     'Grep',
     'Glob',
+    'Skill',
     'mcp__github__get_file_contents',
   ],
 };
