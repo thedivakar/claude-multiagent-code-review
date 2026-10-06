@@ -2,6 +2,7 @@ import * as dotenv from 'dotenv';
 import { mkdirSync, writeFileSync } from 'fs';
 import { CodeReviewOrchestrator } from './orchestrator';
 import { ReportGenerator } from './utils/report-generator';
+import { formatError, isReviewError } from './utils/error-handler';
 
 // Load environment variables
 dotenv.config();
@@ -63,6 +64,16 @@ async function main() {
     process.exit(1);
   }
 
+  // Validate GitHub token
+  const githubToken = process.env.GITHUB_TOKEN;
+
+  if (!githubToken) {
+    console.error(
+      'Error: GITHUB_TOKEN environment variable is required.'
+    );
+    process.exit(1);
+  }
+
   try {
     console.log(
       `Starting review of ${owner}/${repo} PR #${prNumber}...`
@@ -114,26 +125,24 @@ async function main() {
       'utf-8'
     );
 
-    console.log('Code review completed');
-    console.log({
-      service: 'code-review-system',
-      owner,
-      repo,
-      prNumber,
-      score: report.summary.overallScore,
-      duration: report.metadata.duration,
-      status: 'success'
-    });
+    console.log('\nCode review completed successfully!');
+    console.log(`Repository: ${owner}/${repo}`);
+    console.log(`PR Number: #${prNumber}`);
+    console.log(`Overall Score: ${report.summary.overallScore}/100`);
+    console.log(`Duration: ${report.metadata.duration}ms`);
 
-    console.log('Reports saved:');
-    console.log(`- reports/${baseName}.json`);
-    console.log(`- reports/${baseName}.md`);
-    console.log(`- reports/${baseName}.html`);
-    console.log(
-      `Overall score: ${report.summary.overallScore}/100`
-    );
+    console.log('\nReports saved:');
+    console.log(`  - reports/${baseName}.json`);
+    console.log(`  - reports/${baseName}.md`);
+    console.log(`  - reports/${baseName}.html`);
   } catch (error) {
-    console.error('Error:', error);
+    console.error('\nError: Code review failed');
+    console.error(formatError(error));
+
+    if (isReviewError(error) && error.metadata) {
+      console.error('\nDetails:', JSON.stringify(error.metadata, null, 2));
+    }
+
     process.exit(1);
   }
 }
